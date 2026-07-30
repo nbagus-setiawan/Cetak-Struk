@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nota Digital — Toko Arsy-Arys</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="cover">
+    <div class="eyebrow">Buku Kas · Agen PPOB</div>
+    <h1>Nota Digital Toko</h1>
+    <hr class="rule">
+    <p>Isi transaksi, cek nota, lalu kirim langsung ke printer Bluetooth.</p>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- FORM TRANSAKSI -->
+  <div class="card">
+    <div class="card-head">
+      <span class="n">1</span>
+      <h2>Detail Transaksi</h2>
+    </div>
+    <p class="sub">Data di bawah ini otomatis tersusun jadi nota di langkah berikutnya.</p>
+
+    <div class="field">
+      <label>Jenis Transaksi</label>
+      <select id="jenisTransaksi">
+        <option value="transfer_bank">Transfer Bank</option>
+        <option value="tarik_tunai_bank">Tarik Tunai Bank</option>
+        <option value="topup_ewallet">Top Up E-Wallet</option>
+        <option value="tarik_tunai_ewallet">Tarik Tunai E-Wallet</option>
+      </select>
+    </div>
+
+    <div id="dynamicFields"></div>
+
+    <div class="field">
+      <label>Nominal Transaksi (Rp)</label>
+      <input type="number" id="nominal" placeholder="" inputmode="numeric">
+    </div>
+
+    <div class="row2">
+      <div class="field">
+        <label>Biaya Admin (Rp)</label>
+        <input type="number" id="admin" placeholder="" inputmode="numeric">
+      </div>
+      <div class="field">
+        <label>Metode Bayar</label>
+        <select id="metodeBayar">
+          <option>Tunai</option>
+          <option>Saldo Toko</option>
+          <option>Transfer</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Nama Pelanggan (opsional)</label>
+      <input type="text" id="namaPelanggan" placeholder="cth: Budi Santoso">
+    </div>
+
+    <div class="field">
+      <label>Catatan (opsional)</label>
+      <input type="text" id="catatan" placeholder="cth: Titip tanpa materai">
+    </div>
+
+    <button class="btn btn-primary" id="btnGenerate">Susun Nota</button>
+  </div>
+
+  <!-- PREVIEW -->
+  <div class="card" id="previewCard" style="display:none;">
+    <div class="card-head">
+      <span class="n">2</span>
+      <h2>Periksa &amp; Cetak</h2>
+    </div>
+    <p class="sub">Cek sekali lagi sebelum dicetak. Data bisa diubah lagi lewat form di atas.</p>
+
+    <div class="receipt-shell" id="printArea">
+      <div class="receipt-outer">
+        <div class="perf"></div>
+        <div class="receipt" id="receipt"></div>
+        <div class="perf bottom"></div>
+      </div>
+    </div>
+
+    <div class="status-box" id="statusBox"></div>
+
+    <button class="btn btn-primary" id="btnConnectPrint">Cetak via Printer Bluetooth</button>
+    <button class="btn btn-outline" id="btnBrowserPrint">Cetak via Print Browser (cadangan)</button>
+    <button class="btn btn-ghost" id="btnSaveHist">Simpan ke Riwayat</button>
+  </div>
+
+  <!-- RIWAYAT -->
+  <div class="card">
+    <div class="card-head">
+      <span class="n">3</span>
+      <h2>Riwayat Nota</h2>
+    </div>
+    <p class="sub">Tersimpan di perangkat ini saja — belum sinkron ke server.</p>
+    <div id="histList"><div class="empty">Belum ada transaksi tersimpan.</div></div>
+  </div>
+
+</div>
+<script src="main.js"></script>
+</body>
+</html>
