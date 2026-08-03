@@ -305,7 +305,7 @@ document.getElementById('btnKirim').addEventListener('click', async ()=>{
 
       const fileName = lastTrx.trxId.replace(/\//g,'-') + '.png';
       const file = new File([blob], fileName, {type:'image/png'});
-      const shareText = `Nota ${STORE.name}\n${lastTrx.trxId}\n${lastTrx.totalLabel}: ${rupiah(lastTrx.total)}`;
+      const shareText = `STRUK ${STORE.name}\n${lastTrx.trxId}\n${lastTrx.totalLabel}: ${rupiah(lastTrx.total)}`;
 
       const canShareFile = navigator.canShare && navigator.canShare({files:[file]});
 
