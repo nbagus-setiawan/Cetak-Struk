@@ -1,6 +1,8 @@
 const STORE = {
   name: "TOKO ARSY-ARYS",
-  addr: "Jl. Putak Kec. Gelumbang Kab. Muara Enim <br> +62 851 8890 6264"
+  addr1: "Jl. Putak, Kec. Gelumbang",
+  addr2: "Kab. Muara Enim",
+  phone: "0851 8890 6264"
 };
 
 /* ======================= FIELD DINAMIS PER JENIS ======================= */
@@ -27,15 +29,15 @@ const FIELD_CONFIG = {
   topup_ewallet: {
     label: "Top Up E-Wallet",
     fields: [
-      {id:"ewallet", label:"Jenis E-Wallet", type:"select", options:EWALLETS},
-      {id:"noHp", label:"No. HP Tujuan", type:"text", placeholder:"cth: 0812xxxxxxx"},
+      {id:"ewallet", label:"E-Wallet", type:"select", options:EWALLETS},
+      {id:"noHp", label:"Nomor Tujuan", type:"text", placeholder:"cth: 0812xxxxxxx"},
     ]
   },
   tarik_tunai_ewallet: {
     label: "Tarik Tunai E-Wallet",
     fields: [
-      {id:"ewallet", label:"Jenis E-Wallet", type:"select", options:EWALLETS},
-      {id:"noHp", label:"No. HP", type:"text", placeholder:"cth: 0812xxxxxxx"},
+      {id:"ewallet", label:"E-Wallet", type:"select", options:EWALLETS},
+      {id:"noHp", label:"Nomor Tujuan", type:"text", placeholder:"cth: 0812xxxxxxx"},
     ]
   }
 };
@@ -60,13 +62,23 @@ renderDynamicFields();
 /* ======================= HELPER ======================= */
 function rupiah(n){
   n = Number(n)||0;
-  return "Rp " + n.toLocaleString('id-ID');
+  return "Rp" + n.toLocaleString('id-ID');
 }
+const MONTH_NAMES = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
 function nowStr(){
   const d = new Date();
-  const tgl = d.toLocaleDateString('id-ID', {day:'2-digit', month:'2-digit', year:'numeric'});
-  const jam = d.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
-  return {tgl, jam};
+  const dd = String(d.getDate()).padStart(2,'0');
+  const mm = String(d.getMonth()+1).padStart(2,'0');
+  const yyyy = d.getFullYear();
+  const tgl = `${dd}/${mm}/${yyyy}`;
+  const tglLong = `${dd} ${MONTH_NAMES[d.getMonth()]} ${yyyy}`;
+  const jam = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  return {tgl, tglLong, jam};
+}
+function formatPhone(raw){
+  const digits = String(raw||'').replace(/\D/g,'');
+  if(!digits) return raw||'';
+  return digits.match(/.{1,4}/g).join('-');
 }
 function genTrxId(){
   const d = new Date();
@@ -98,18 +110,20 @@ document.getElementById('btnGenerate').addEventListener('click', ()=>{
 
   const detailFields = cfg.fields.map(f=>{
     const el = document.getElementById(f.id);
-    return {label:f.label, value: el ? el.value : ''};
+    let value = el ? el.value : '';
+    if(f.id === 'noHp') value = formatPhone(value);
+    return {label:f.label, value};
   });
 
   const isTarikan = (jenis==='tarik_tunai_bank' || jenis==='tarik_tunai_ewallet');
   const total = isTarikan ? (nominal - admin) : (nominal + admin);
-  const totalLabel = isTarikan ? "Diterima Pelanggan" : "Dibayar Pelanggan";
+  const totalLabel = isTarikan ? "Total Diterima" : "Total Dibayar";
 
-  const {tgl, jam} = nowStr();
+  const {tgl, tglLong, jam} = nowStr();
   const trxId = genTrxId();
 
   lastTrx = {
-    trxId, tgl, jam, jenis, jenisLabel: cfg.label, detailFields,
+    trxId, tgl, tglLong, jam, jenis, jenisLabel: cfg.label, detailFields,
     nominal, admin, total, totalLabel, metode, namaPelanggan, catatan
   };
 
@@ -127,24 +141,17 @@ function renderReceipt(t){
   const detailHtml = t.detailFields.filter(f=>f.value)
     .map(f=> receiptRow(f.label, escapeHtml(f.value))).join('');
 
-  const storeInitial = STORE.name.trim().charAt(0).toUpperCase();
-
   receiptEl.innerHTML = `
-    <div class="r-topbar"></div>
-    <div class="r-stamp" id="rStamp">
-      <span class="big">LUNAS</span>
-      <span class="small">${t.tgl}</span>
-    </div>
     <div class="r-body">
       <div class="r-store">
-        <div class="r-logo">${storeInitial}</div>
         <div class="name">${STORE.name}</div>
-        <div class="addr">${STORE.addr}</div>
+        <div class="addr">${STORE.addr1}<br>${STORE.addr2}</div>
+        <div class="wa">WhatsApp: ${formatPhone(STORE.phone)}</div>
       </div>
 
       <div class="r-status">
         <div class="label"><span class="ok">✓</span>Transaksi Berhasil</div>
-        <div class="time">${t.tgl} · ${t.jam} WIB</div>
+        <div class="time">${t.tgl} • ${t.jam} WIB</div>
       </div>
 
       <div class="r-amount">
@@ -161,7 +168,7 @@ function renderReceipt(t){
         ${t.namaPelanggan? receiptRow('Pelanggan', escapeHtml(t.namaPelanggan)) : ''}
         ${receiptRow('Nominal', rupiah(t.nominal))}
         ${receiptRow('Biaya Admin', rupiah(t.admin))}
-        ${receiptRow('Metode Bayar', t.metode)}
+        ${receiptRow('Metode Pembayaran', t.metode)}
         ${t.catatan? receiptRow('Catatan', escapeHtml(t.catatan)) : ''}
         <tr class="total"><td class="k">${t.totalLabel}</td><td class="v">${rupiah(t.total)}</td></tr>
       </table>
@@ -175,16 +182,14 @@ function renderReceipt(t){
       <div class="r-code">${t.trxId}</div>
 
       <div class="r-foot">
-        Nota ini sah sebagai bukti transaksi tanpa tanda tangan basah.
-        <div class="sys">Dicetak otomatis oleh sistem kasir digital</div>
+        <div class="foot-title">Bukti Transaksi Resmi</div>
+        Struk ini merupakan bukti transaksi resmi.<br>
+        Sah tanpa tanda tangan dan cap basah.
+        <div class="foot-note">Simpan struk ini sebagai bukti transaksi.</div>
+        <div class="foot-thanks">Terima kasih telah bertransaksi.</div>
       </div>
     </div>
   `;
-
-  requestAnimationFrame(()=>{
-    const st = document.getElementById('rStamp');
-    if(st) st.classList.add('drop');
-  });
 }
 
 /* ======================= STATUS BOX ======================= */
@@ -219,7 +224,9 @@ function buildEscPosBytes(t){
   push(ESC,0x61,0x01);
   push(ESC,0x21,0x30); text(STORE.name+"\n");
   push(ESC,0x21,0x00);
-  text(STORE.addr+"\n");
+  text(STORE.addr1+"\n");
+  text(STORE.addr2+"\n");
+  text("WhatsApp: "+formatPhone(STORE.phone)+"\n");
   line();
   push(ESC,0x61,0x00);
   text(`No: ${t.trxId}\n`);
@@ -245,40 +252,91 @@ function buildEscPosBytes(t){
   return new Uint8Array(out);
 }
 
-document.getElementById('btnConnectPrint').addEventListener('click', async ()=>{
-  if(!lastTrx){ alert('Susun nota terlebih dahulu.'); return; }
+async function printViaBluetooth(t){
+  if(!navigator.bluetooth) throw new Error('Web Bluetooth tidak didukung browser ini');
+
+  showStatus('Mencari printer Bluetooth di sekitar...', '');
+  const device = await navigator.bluetooth.requestDevice({
+    acceptAllDevices: true,
+    optionalServices: [SERVICE_UUID]
+  });
+
+  showStatus(`Menghubungkan ke "${device.name||'printer'}"...`, '');
+  const server = await device.gatt.connect();
+  const service = await server.getPrimaryService(SERVICE_UUID);
+  const characteristic = await service.getCharacteristic(CHAR_UUID);
+
+  const bytes = buildEscPosBytes(t);
+  const CHUNK = 180;
+  for(let i=0;i<bytes.length;i+=CHUNK){
+    await characteristic.writeValue(bytes.slice(i,i+CHUNK));
+  }
+  showStatus('berhasil dikirim ke printer Bluetooth.', 'ok');
+}
+
+document.getElementById('btnCetak').addEventListener('click', async ()=>{
+  if(!lastTrx){ alert('Susun Struk terlebih dahulu.'); return; }
 
   if(!navigator.bluetooth){
-    showStatus('Browser ini tidak mendukung Web Bluetooth. Gunakan Chrome/Edge di Android melalui HTTPS, atau pakai "Cetak via Print Browser" sementara.', 'err');
+    window.print();
     return;
   }
 
   try{
-    showStatus('Mencari printer Bluetooth di sekitar...', '');
-    const device = await navigator.bluetooth.requestDevice({
-      acceptAllDevices: true,
-      optionalServices: [SERVICE_UUID]
-    });
-
-    showStatus(`Menghubungkan ke "${device.name||'printer'}"...`, '');
-    const server = await device.gatt.connect();
-    const service = await server.getPrimaryService(SERVICE_UUID);
-    const characteristic = await service.getCharacteristic(CHAR_UUID);
-
-    const bytes = buildEscPosBytes(lastTrx);
-    const CHUNK = 180;
-    for(let i=0;i<bytes.length;i+=CHUNK){
-      await characteristic.writeValue(bytes.slice(i,i+CHUNK));
-    }
-    showStatus('Nota berhasil dikirim ke printer.', 'ok');
+    await printViaBluetooth(lastTrx);
   }catch(err){
-    console.error(err);
-    showStatus('Gagal cetak: '+(err.message||err)+'. Pastikan printer menyala & Bluetooth aktif, atau sesuaikan UUID service/characteristic untuk model printer kamu.', 'err');
+    console.warn('Cetak Bluetooth gagal/dibatalkan, beralih ke print browser.', err);
+    showStatus('Printer Bluetooth tidak tersambung, membuka dialog print browser sebagai cadangan.', '');
+    window.print();
   }
 });
 
-document.getElementById('btnBrowserPrint').addEventListener('click', ()=>{
-  window.print();
+/* ======================= KIRIM (SHARE KE WHATSAPP) ======================= */
+document.getElementById('btnKirim').addEventListener('click', async ()=>{
+  if(!lastTrx){ alert('Susun Struk terlebih dahulu.'); return; }
+
+  showStatus('Menyiapkan gambar struk...', '');
+  try{
+    const receiptOuter = document.querySelector('.receipt-outer');
+    const canvas = await html2canvas(receiptOuter, {backgroundColor:null, scale:2});
+
+    canvas.toBlob(async (blob)=>{
+      if(!blob){ showStatus('Gagal membuat gambar struk.', 'err'); return; }
+
+      const fileName = lastTrx.trxId.replace(/\//g,'-') + '.png';
+      const file = new File([blob], fileName, {type:'image/png'});
+      const shareText = `Nota ${STORE.name}\n${lastTrx.trxId}\n${lastTrx.totalLabel}: ${rupiah(lastTrx.total)}`;
+
+      const canShareFile = navigator.canShare && navigator.canShare({files:[file]});
+
+      if(navigator.share && canShareFile){
+        try{
+          await navigator.share({files:[file], title:'Struk Digital', text: shareText});
+          showStatus('Struk berhasil dibagikan.', 'ok');
+        }catch(err){
+          if(err.name !== 'AbortError'){
+            showStatus('Gagal membagikan struk: '+(err.message||err), 'err');
+          }else{
+            hideStatus();
+          }
+        }
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = fileName; a.click();
+        URL.revokeObjectURL(url);
+
+        const waUrl = 'https://wa.me/?text=' + encodeURIComponent(
+          shareText + ''
+        );
+        window.open(waUrl, '_blank');
+        showStatus('');
+      }
+    }, 'image/png');
+  }catch(err){
+    console.error(err);
+    showStatus('Gagal menyiapkan gambar struk: '+(err.message||err), 'err');
+  }
 });
 
 /* ======================= RIWAYAT (localStorage) ======================= */
@@ -317,13 +375,34 @@ window.reprint = function(i){
   previewCard.scrollIntoView({behavior:'smooth', block:'start'});
 };
 
-document.getElementById('btnSaveHist').addEventListener('click', ()=>{
+const SHEET_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbz_RMwb-w5rWxn_rIXD4shXGJ9viyGV2A9GdEwqTFwC6Sy04d1z-DUoGJ8btMw2kCfv/exec';
+
+document.getElementById('btnCatat').addEventListener('click', async ()=>{
   if(!lastTrx) return;
+
   const list = getHist();
   list.unshift(lastTrx);
   saveHist(list);
   renderHist();
-  showStatus('Transaksi disimpan ke riwayat perangkat ini.', 'ok');
+
+  if(!SHEET_WEBHOOK_URL){
+    showStatus('Transaksi disimpan ke riwayat perangkat ini. (Google Sheet belum disetel — isi SHEET_WEBHOOK_URL di main.js)', '');
+    return;
+  }
+
+  showStatus('Menyimpan ke riwayat & mengirim ke Google Sheet...', '');
+  try{
+    await fetch(SHEET_WEBHOOK_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: {'Content-Type': 'text/plain'},
+      body: JSON.stringify(lastTrx)
+    });
+    showStatus('Transaksi disimpan ke riwayat & Google Sheet.', 'ok');
+  }catch(err){
+    console.error(err);
+    showStatus('Tersimpan ke riwayat perangkat, tapi gagal mengirim ke Google Sheet.', 'err');
+  }
 });
 
 renderHist();
