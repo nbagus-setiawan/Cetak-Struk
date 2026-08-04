@@ -1,5 +1,5 @@
 const STORE = {
-  name: "TOKO ARSY-ARYS",
+  name: "TOKO ARSYA-ARSY",
   addr1: "Jl. Putak, Kec. Gelumbang",
   addr2: "Kab. Muara Enim",
   phone: "0851 8890 6264"
