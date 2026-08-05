@@ -1,5 +1,5 @@
 const STORE = {
-  name: "TOKO ARSYA-ARSY",
+  name: "TOKO ARSYA ARSY DIGITAL",
   addr1: "Jl. Putak, Kec. Gelumbang",
   addr2: "Kab. Muara Enim",
   phone: "0851 8890 6264"
@@ -116,7 +116,9 @@ document.getElementById('btnGenerate').addEventListener('click', ()=>{
   });
 
   const isTarikan = (jenis==='tarik_tunai_bank' || jenis==='tarik_tunai_ewallet');
-  const total = isTarikan ? (nominal - admin) : (nominal + admin);
+  
+  // PERBAIKAN: Jika penarikan tunai, total sama dengan nominal (tanpa dikurangi admin)
+  const total = isTarikan ? nominal : (nominal + admin);
   const totalLabel = isTarikan ? "Total Diterima" : "Total Dibayar";
 
   const {tgl, tglLong, jam} = nowStr();
@@ -144,6 +146,8 @@ function renderReceipt(t){
   receiptEl.innerHTML = `
     <div class="r-body">
       <div class="r-store">
+        <!-- Logo Fastpay -->
+        <img src="logo-fastpay.png" alt="Fastpay Logo" class="r-logo">
         <div class="name">${STORE.name}</div>
         <div class="addr">${STORE.addr1}<br>${STORE.addr2}</div>
         <div class="wa">WhatsApp: ${formatPhone(STORE.phone)}</div>
@@ -201,14 +205,6 @@ function showStatus(msg, type){
 function hideStatus(){ statusBox.className = 'status-box'; }
 
 /* ======================= CETAK VIA BLUETOOTH (ESC/POS) ======================= */
-/*
-  CATATAN PENTING:
-  - Web Bluetooth API HANYA berjalan di Chrome/Edge Android, via koneksi HTTPS.
-    TIDAK didukung di Safari/iOS (keterbatasan browser, bukan kode ini).
-  - UUID di bawah adalah UUID umum untuk printer thermal ESC/POS murah (BLE).
-    Jika printer tidak terdeteksi/tidak mau print, sesuaikan SERVICE_UUID &
-    CHAR_UUID dengan datasheet printer yang dipakai.
-*/
 const SERVICE_UUID = '000018f0-0000-1000-8000-00805f9b34fb';
 const CHAR_UUID    = '00002af1-0000-1000-8000-00805f9b34fb';
 
