@@ -193,13 +193,13 @@ select:focus, input:focus{ outline:none; border-color:var(--brass); box-shadow:0
   font-family:'Space Mono',monospace; font-size:12px; font-weight:700; letter-spacing:.02em;
 }
 
-.r-barcode{
-  height:34px; margin-top:6px;
-  background-image:repeating-linear-gradient(90deg,
-    var(--paper-ink) 0 1.5px, transparent 1.5px 3px,
-    var(--paper-ink) 3px 4px, transparent 4px 5.5px,
-    var(--paper-ink) 5.5px 8px, transparent 8px 10px);
-  opacity:1;
+.r-barcode {
+  height: 34px;
+  margin-top: 6px;
+  /* Menggunakan pola SVG agar bisa di-render oleh html2canvas saat dikirim */
+  background-image: url("data:image/svg+xml,%3Csvg width='10' height='34' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0,0 h1.5 v34 h-1.5 z M3,0 h1 v34 h-1 z M5.5,0 h2.5 v34 h-2.5 z' fill='%23000'/%3E%3C/svg%3E");
+  background-repeat: repeat-x;
+  opacity: 1;
 }
 .r-code{ text-align:center; font-family:'Space Mono',monospace; font-size:10px; letter-spacing:.26em; margin-top:6px; opacity:.75; }
 
