@@ -216,7 +216,7 @@ const PRINTER_COLS = 32;
 // Ganti ke 576 kalau kertas printer kamu 80mm (dan PRINTER_COLS ke 48).
 const PAPER_WIDTH_DOTS = 384;
 // Lebar logo itu sendiri saat dicetak (harus <= PAPER_WIDTH_DOTS).
-const LOGO_WIDTH_DOTS = 220;
+const LOGO_WIDTH_DOTS = 260;
 
 /* ---- Utilitas gambar (khusus logo) ----
  * PENTING: banyak printer thermal murah MENGABAIKAN perintah "rata tengah"
@@ -303,12 +303,6 @@ function buildReceiptTextBytes(t){
   const text = (s) => push(...enc.encode(s));
   const divider = () => text('-'.repeat(PRINTER_COLS) + '\n');
 
-  const center = (s) => {
-    s = String(s);
-    if (s.length >= PRINTER_COLS) return s;
-    const pad = Math.floor((PRINTER_COLS - s.length) / 2);
-    return ' '.repeat(pad) + s;
-  };
   const twoCol = (l, r) => {
     l = String(l); r = String(r);
     if (l.length + r.length + 1 >= PRINTER_COLS) {
@@ -333,8 +327,8 @@ function buildReceiptTextBytes(t){
   text('WhatsApp: ' + formatPhone(STORE.phone) + '\n');
   text('\n');
 
-  text(center('TRANSAKSI BERHASIL') + '\n');
-  text(center(`${t.tgl} - ${t.jam} WIB`) + '\n');
+  text('TRANSAKSI BERHASIL\n');
+  text(`${t.tgl} - ${t.jam} WIB\n`);
   text('\n');
 
   alignLeft();
@@ -344,7 +338,7 @@ function buildReceiptTextBytes(t){
   divider();
 
   alignCenter();
-  text(center(t.jenisLabel.toUpperCase()) + '\n');
+  text(t.jenisLabel.toUpperCase() + '\n');
   alignLeft();
   divider();
 
@@ -363,7 +357,6 @@ function buildReceiptTextBytes(t){
 
   text(twoCol('Metode Bayar', t.metode));
   if (t.catatan) text(`Catatan: ${t.catatan}\n`);
-  text('\n');
 
   return new Uint8Array(out);
 }
@@ -393,7 +386,7 @@ async function printViaBluetooth(t){
     const logoBitmap = await loadLogoBitmap(LOGO_WIDTH_DOTS, PAPER_WIDTH_DOTS);
     parts.push(new Uint8Array([ESC, 0x61, 0x01])); // center
     parts.push(buildEscPosRasterCommand(logoBitmap));
-    parts.push(enc.encode('\n'));
+    parts.push(enc.encode('\n\n')); // jarak antara logo & nama toko
   } catch (e) {
     console.warn('Logo gagal dimuat, lanjut tanpa logo.', e);
   }
@@ -402,8 +395,7 @@ async function printViaBluetooth(t){
 
   parts.push(new Uint8Array([ESC, 0x61, 0x01])); // center
   parts.push(buildCode128Barcode(t.trxId));
-  parts.push(enc.encode(t.trxId + '\n\n'));
-
+  parts.push(enc.encode(t.trxId + '\n'));
   parts.push(enc.encode('Nota sah tanpa tanda tangan\ndan cap basah\n'));
   parts.push(new Uint8Array([GS, 0x56, 0x42, 0x00])); // potong kertas, tanpa feed tambahan
 
