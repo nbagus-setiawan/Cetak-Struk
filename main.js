@@ -282,12 +282,15 @@ function buildCode128Barcode(data, { height = 60, moduleWidth = 2 } = {}){
 
 /* ---- Susun bagian teks struk (native font printer) ----
  * RAPI 58mm:
- * - twoCol sekarang mensyaratkan minimal 2 spasi jarak antara label & nilai;
- *   kalau nggak cukup, otomatis pindah baris & nilainya rata kanan (bukan
- *   dipaksa nempel 1 spasi seperti sebelumnya).
+ * - twoCol mensyaratkan minimal 2 spasi jarak antara label & nilai; kalau
+ *   nggak cukup, otomatis pindah baris & nilainya rata kanan.
  * - Baris TOTAL dibatasi garis ganda ("=") biar beda & lebih menonjol
  *   dibanding pembatas biasa ("-").
- * - Spasi kosong dirapikan jadi konsisten 1 baris kosong antar bagian. */
+ * - Jenis transaksi (mis. "TRANSFER BANK") dan garis di sekelilingnya
+ *   dicetak bold, biar langsung kelihatan tanpa harus baca detail.
+ * - Semua jarak antar bagian pakai FEED SETENGAH BARIS (ESC J, feed per
+ *   dot) bukan baris kosong penuh — jadi struk lebih ringkas/rapat &
+ *   hemat kertas, terutama antara detail tujuan & nominal. */
 function buildReceiptTextBytes(t){
   const ESC = 0x1B, GS = 0x1D;
   const enc = new TextEncoder();
@@ -296,6 +299,13 @@ function buildReceiptTextBytes(t){
   const text = (s) => push(...enc.encode(s));
   const divider = () => text('-'.repeat(PRINTER_COLS) + '\n');
   const doubleDivider = () => text('='.repeat(PRINTER_COLS) + '\n');
+
+  // Feed setengah baris: ESC J n = feed kertas n dot tanpa mencetak baris
+  // kosong penuh. Line height normal printer thermal ~24-32 dot, jadi 12
+  // dot kira-kira setengahnya. Naikkan/turunkan angka ini kalau printer
+  // kamu terasa masih kejauhan/kerapatan.
+  const HALF_GAP_DOTS = 12;
+  const halfGap = () => push(ESC, 0x4A, HALF_GAP_DOTS);
 
   const twoCol = (l, r) => {
     l = String(l); r = String(r);
@@ -320,42 +330,44 @@ function buildReceiptTextBytes(t){
   text(STORE.addr1 + '\n');
   text(STORE.addr2 + '\n');
   text('WhatsApp: ' + formatPhone(STORE.phone) + '\n');
-  text('\n');
+  halfGap();
 
   text('TRANSAKSI BERHASIL\n');
   text(`${t.tgl} - ${t.jam} WIB\n`);
-  text('\n');
+  halfGap();
 
   alignLeft();
   text(`No. Transaksi:\n`);
   text(`${t.trxId}\n`);
-  text('\n');
+  halfGap();
 
   alignCenter();
+  boldOn();
   divider();
   text(t.jenisLabel.toUpperCase() + '\n');
   divider();
-  text('\n');
+  boldOff();
+  halfGap();
 
   alignLeft();
   t.detailFields.filter(f => f.value).forEach(f => text(twoCol(f.label, f.value)));
   if (t.namaPelanggan) text(twoCol('Pelanggan', t.namaPelanggan));
-  text('\n');
+  halfGap();
 
   text(twoCol('Nominal', rupiah(t.nominal)));
   text(twoCol('Biaya Admin', rupiah(t.admin)));
-  text('\n');
+  halfGap();
 
   doubleDivider();
   boldOn();
   text(twoCol(t.totalLabel, rupiah(t.total)));
   boldOff();
   doubleDivider();
-  text('\n');
+  halfGap();
 
   text(twoCol('Metode Bayar', t.metode));
   if (t.catatan) text(`Catatan: ${t.catatan}\n`);
-  text('\n');
+  halfGap();
 
   return new Uint8Array(out);
 }
@@ -381,11 +393,13 @@ async function printViaBluetooth(t){
 
   parts.push(new Uint8Array([ESC, 0x40])); // init printer
 
+  const HALF_GAP_DOTS = 12; // sama dengan di buildReceiptTextBytes
+
   try {
     const logoBitmap = await loadLogoBitmap(LOGO_WIDTH_DOTS, PAPER_WIDTH_DOTS);
     parts.push(new Uint8Array([ESC, 0x61, 0x01])); // center
     parts.push(buildEscPosRasterCommand(logoBitmap));
-    parts.push(enc.encode('\n\n')); // jarak antara logo & nama toko
+    parts.push(new Uint8Array([ESC, 0x4A, HALF_GAP_DOTS])); // jarak setengah baris ke nama toko
   } catch (e) {
     console.warn('Logo gagal dimuat, lanjut tanpa logo.', e);
   }
@@ -396,7 +410,8 @@ async function printViaBluetooth(t){
   parts.push(new Uint8Array([ESC, 0x61, 0x01])); // center
   parts.push(enc.encode('No. Referensi\n'));
   parts.push(buildCode128Barcode(t.trxId));
-  parts.push(enc.encode(t.trxId + '\n\n'));
+  parts.push(enc.encode(t.trxId + '\n'));
+  parts.push(new Uint8Array([ESC, 0x4A, HALF_GAP_DOTS]));
   parts.push(enc.encode('Nota sah tanpa tanda tangan\ndan cap basah\n'));
   parts.push(new Uint8Array([GS, 0x56, 0x42, 0x00])); // potong kertas, tanpa feed tambahan
 
