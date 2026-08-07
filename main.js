@@ -257,16 +257,25 @@ function buildEscPosRasterCommand({ bitmap, height, bytesPerRow }){
   return out;
 }
 
-/* ---- Barcode native (dicetak langsung oleh printer, bukan gambar) ---- */
-function buildCode128Barcode(data, { height = 70, moduleWidth = 2 } = {}){
+/* ---- Barcode native (dicetak langsung oleh printer, bukan gambar) ----
+ * Nomor transaksi lengkap ("INV/202608/154993") kalau dikodekan apa adanya
+ * jadi terlalu LEBAR untuk kertas 58mm dan printer akan menolaknya
+ * ("wide error!"). Jadi barcode hanya mengkodekan ANGKA-nya saja pakai
+ * Code Set C (paling padat, 2 digit per simbol) supaya muat di kertas.
+ * Teks lengkap nomor transaksi tetap dicetak manual di bawah barcode. */
+function buildCode128Barcode(data, { height = 60, moduleWidth = 2 } = {}){
   const GS = 0x1D;
   const enc = new TextEncoder();
-  const payloadBytes = enc.encode('{B' + data); // Code Set B (alfanumerik)
+
+  let digits = String(data).replace(/\D/g, '');
+  if (digits.length === 0) digits = '0';
+  if (digits.length % 2 !== 0) digits = '0' + digits; // Code Set C butuh jumlah digit genap
+
+  const payloadBytes = enc.encode('{C' + digits); // Code Set C (numerik, paling ringkas)
   const out = [];
   out.push(GS, 0x68, height);        // GS h  - tinggi barcode
   out.push(GS, 0x77, moduleWidth);   // GS w  - lebar modul
-  out.push(GS, 0x48, 2);             // GS H  - teks HRI di bawah barcode
-  out.push(GS, 0x66, 0);             // GS f  - font HRI
+  out.push(GS, 0x48, 0);             // GS H  - matikan teks HRI otomatis (kita cetak manual)
   out.push(GS, 0x6B, 73, payloadBytes.length, ...payloadBytes); // GS k m n data (CODE128)
   return new Uint8Array(out);
 }
@@ -383,10 +392,10 @@ async function printViaBluetooth(t){
 
   parts.push(new Uint8Array([ESC, 0x61, 0x01])); // center
   parts.push(buildCode128Barcode(t.trxId));
-  parts.push(enc.encode('\n'));
+  parts.push(enc.encode(t.trxId + '\n\n'));
 
-  parts.push(enc.encode('Nota sah tanpa tanda tangan\ndan cap basah\n\n\n'));
-  parts.push(new Uint8Array([GS, 0x56, 0x42, 0x00])); // potong kertas
+  parts.push(enc.encode('Nota sah tanpa tanda tangan\ndan cap basah\n'));
+  parts.push(new Uint8Array([GS, 0x56, 0x42, 0x00])); // potong kertas, tanpa feed tambahan
 
   const total = parts.reduce((s, p) => s + p.length, 0);
   const bytes = new Uint8Array(total);
