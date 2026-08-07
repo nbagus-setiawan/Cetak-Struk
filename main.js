@@ -332,37 +332,29 @@ function buildReceiptTextBytes(t){
   text('\n');
 
   alignLeft();
-  divider();
-  text('\n');
   text(`No. Transaksi:\n`);
   text(`${t.trxId}\n`);
   text('\n');
-  divider();
-  text('\n');
 
   alignCenter();
-  text(t.jenisLabel.toUpperCase() + '\n');
-  alignLeft();
-  text('\n');
   divider();
+  text(t.jenisLabel.toUpperCase() + '\n');
+  divider();
+  alignLeft();
   text('\n');
 
   t.detailFields.filter(f => f.value).forEach(f => text(twoCol(f.label, f.value)));
   if (t.namaPelanggan) text(twoCol('Pelanggan', t.namaPelanggan));
   text('\n');
-  divider();
-  text('\n');
 
   text(twoCol('Nominal', rupiah(t.nominal)));
   text(twoCol('Biaya Admin', rupiah(t.admin)));
   text('\n');
-  divider();
-  text('\n');
 
+  divider();
   boldOn();
   text(twoCol(t.totalLabel, rupiah(t.total)));
   boldOff();
-  text('\n');
   divider();
   text('\n');
 
