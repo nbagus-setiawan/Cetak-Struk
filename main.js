@@ -204,80 +204,149 @@ function showStatus(msg, type){
 }
 function hideStatus(){ statusBox.className = 'status-box'; }
 
-/* ======================= CETAK VIA BLUETOOTH (ESC/POS - RASTER GAMBAR) ======================= */
+/* ======================= CETAK VIA BLUETOOTH (ESC/POS NATIVE) ======================= */
+// Sama seperti struk Fastpay asli: teks dicetak native oleh printer (tajam & cepat),
+// hanya LOGO dan BARCODE yang dikirim sebagai gambar/perintah khusus.
 const SERVICE_UUID = '000018f0-0000-1000-8000-00805f9b34fb';
 const CHAR_UUID    = '00002af1-0000-1000-8000-00805f9b34fb';
 
-// Lebar kertas printer dalam dot. Standar 58mm ≈ 384 dot, 80mm ≈ 576 dot.
-// Ganti ke 576 kalau printer kamu kertas 80mm.
-const PRINTER_WIDTH_DOTS = 384;
+// Lebar kertas dalam kolom karakter (font normal). 58mm biasanya 32 kolom, 80mm 48 kolom.
+const PRINTER_COLS = 32;
+// Lebar logo dalam dot saat dicetak (bukan lebar kertas). 58mm ≈ 384 dot total.
+const LOGO_WIDTH_DOTS = 220;
 
-/**
- * Ambil screenshot elemen struk (persis tampilan di preview, termasuk logo,
- * warna status, kotak referensi, barcode) lalu ubah jadi bitmap hitam-putih
- * (dithering sederhana) supaya bisa dicetak sebagai gambar via ESC/POS.
- */
-async function captureReceiptAsMonoBitmap(targetWidthDots){
-  const receiptOuter = document.querySelector('.receipt-outer');
-  const canvas = await html2canvas(receiptOuter, { backgroundColor: '#ffffff', scale: 2 });
+/* ---- Utilitas gambar (khusus logo) ---- */
+async function loadLogoBitmap(targetWidthDots){
+  const img = new Image();
+  img.src = 'logo-fastpay.png';
+  await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
 
-  const scale = targetWidthDots / canvas.width;
-  const targetHeight = Math.max(1, Math.round(canvas.height * scale));
+  const scale = targetWidthDots / img.naturalWidth;
+  const h = Math.max(1, Math.round(img.naturalHeight * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = targetWidthDots; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, targetWidthDots, h);
+  ctx.drawImage(img, 0, 0, targetWidthDots, h);
 
-  const off = document.createElement('canvas');
-  off.width = targetWidthDots;
-  off.height = targetHeight;
-  const ctx = off.getContext('2d');
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, targetWidthDots, targetHeight);
-  ctx.drawImage(canvas, 0, 0, targetWidthDots, targetHeight);
-
-  const imgData = ctx.getImageData(0, 0, targetWidthDots, targetHeight);
-  const px = imgData.data;
-
-  // Floyd–Steinberg dithering supaya hasil cetak foto/gradasi tetap enak dilihat
-  const gray = new Float32Array(targetWidthDots * targetHeight);
-  for (let i = 0, p = 0; i < px.length; i += 4, p++) {
-    const r = px[i], g = px[i+1], b = px[i+2], a = px[i+3];
-    const lum = a === 0 ? 255 : (0.299*r + 0.587*g + 0.114*b);
-    gray[p] = lum;
-  }
-
+  const data = ctx.getImageData(0, 0, targetWidthDots, h).data;
   const bytesPerRow = Math.ceil(targetWidthDots / 8);
-  const bitmap = new Uint8Array(bytesPerRow * targetHeight);
-
-  for (let y = 0; y < targetHeight; y++) {
+  const bitmap = new Uint8Array(bytesPerRow * h);
+  for (let y = 0; y < h; y++) {
     for (let x = 0; x < targetWidthDots; x++) {
-      const idx = y * targetWidthDots + x;
-      const oldVal = gray[idx];
-      const black = oldVal < 128;
-      if (black) {
-        const byteIndex = y * bytesPerRow + (x >> 3);
-        bitmap[byteIndex] |= (0x80 >> (x & 7));
-      }
-      const err = oldVal - (black ? 0 : 255);
-      if (x + 1 < targetWidthDots) gray[idx + 1] += err * 7/16;
-      if (y + 1 < targetHeight) {
-        if (x > 0) gray[idx - 1 + targetWidthDots] += err * 3/16;
-        gray[idx + targetWidthDots] += err * 5/16;
-        if (x + 1 < targetWidthDots) gray[idx + 1 + targetWidthDots] += err * 1/16;
+      const idx = (y * targetWidthDots + x) * 4;
+      const r = data[idx], g = data[idx+1], b = data[idx+2], a = data[idx+3];
+      const lum = a < 10 ? 255 : (0.299*r + 0.587*g + 0.114*b);
+      if (lum < 160) {
+        const bi = y * bytesPerRow + (x >> 3);
+        bitmap[bi] |= (0x80 >> (x & 7));
       }
     }
   }
-
-  return { bitmap, width: targetWidthDots, height: targetHeight, bytesPerRow };
+  return { bitmap, width: targetWidthDots, height: h, bytesPerRow };
 }
 
-// Bungkus bitmap jadi perintah ESC/POS GS v 0 (print raster bit image)
-function buildEscPosRasterCommand({ bitmap, width, height, bytesPerRow }){
+function buildEscPosRasterCommand({ bitmap, height, bytesPerRow }){
   const GS = 0x1D;
   const xL = bytesPerRow & 0xFF, xH = (bytesPerRow >> 8) & 0xFF;
-  const yL = height & 0xFF,     yH = (height >> 8) & 0xFF;
+  const yL = height & 0xFF,      yH = (height >> 8) & 0xFF;
   const header = new Uint8Array([GS, 0x76, 0x30, 0x00, xL, xH, yL, yH]);
   const out = new Uint8Array(header.length + bitmap.length);
   out.set(header, 0);
   out.set(bitmap, header.length);
   return out;
+}
+
+/* ---- Barcode native (dicetak langsung oleh printer, bukan gambar) ---- */
+function buildCode128Barcode(data, { height = 70, moduleWidth = 2 } = {}){
+  const GS = 0x1D;
+  const enc = new TextEncoder();
+  const payloadBytes = enc.encode('{B' + data); // Code Set B (alfanumerik)
+  const out = [];
+  out.push(GS, 0x68, height);        // GS h  - tinggi barcode
+  out.push(GS, 0x77, moduleWidth);   // GS w  - lebar modul
+  out.push(GS, 0x48, 2);             // GS H  - teks HRI di bawah barcode
+  out.push(GS, 0x66, 0);             // GS f  - font HRI
+  out.push(GS, 0x6B, 73, payloadBytes.length, ...payloadBytes); // GS k m n data (CODE128)
+  return new Uint8Array(out);
+}
+
+/* ---- Susun bagian teks struk (native font printer) ---- */
+function buildReceiptTextBytes(t){
+  const ESC = 0x1B, GS = 0x1D;
+  const enc = new TextEncoder();
+  const out = [];
+  const push = (...b) => out.push(...b);
+  const text = (s) => push(...enc.encode(s));
+  const divider = () => text('-'.repeat(PRINTER_COLS) + '\n');
+
+  const center = (s) => {
+    s = String(s);
+    if (s.length >= PRINTER_COLS) return s;
+    const pad = Math.floor((PRINTER_COLS - s.length) / 2);
+    return ' '.repeat(pad) + s;
+  };
+  const twoCol = (l, r) => {
+    l = String(l); r = String(r);
+    if (l.length + r.length + 1 >= PRINTER_COLS) {
+      return l + '\n' + r.padStart(PRINTER_COLS) + '\n';
+    }
+    return l + ' '.repeat(PRINTER_COLS - l.length - r.length) + r + '\n';
+  };
+
+  const alignCenter = () => push(ESC, 0x61, 0x01);
+  const alignLeft   = () => push(ESC, 0x61, 0x00);
+  const boldOn  = () => push(ESC, 0x45, 0x01);
+  const boldOff = () => push(ESC, 0x45, 0x00);
+  const doubleHOn  = () => push(GS, 0x21, 0x01); // tinggi 2x, lebar normal (tidak wrap)
+  const sizeNormal = () => push(GS, 0x21, 0x00);
+
+  alignCenter();
+  boldOn(); doubleHOn();
+  text(STORE.name + '\n');
+  sizeNormal(); boldOff();
+  text(STORE.addr1 + '\n');
+  text(STORE.addr2 + '\n');
+  text('WhatsApp: ' + formatPhone(STORE.phone) + '\n');
+  text('\n');
+
+  boldOn();
+  text(center('TRANSAKSI BERHASIL') + '\n');
+  boldOff();
+  text(center(`${t.tgl} - ${t.jam} WIB`) + '\n');
+  text('\n');
+
+  alignLeft();
+  divider();
+  text(`No. Transaksi:\n`);
+  text(`${t.trxId}\n`);
+  divider();
+
+  alignCenter();
+  boldOn();
+  text(center(t.jenisLabel.toUpperCase()) + '\n');
+  boldOff();
+  alignLeft();
+  divider();
+
+  t.detailFields.filter(f => f.value).forEach(f => text(twoCol(f.label, f.value)));
+  if (t.namaPelanggan) text(twoCol('Pelanggan', t.namaPelanggan));
+  divider();
+
+  text(twoCol('Nominal', rupiah(t.nominal)));
+  text(twoCol('Biaya Admin', rupiah(t.admin)));
+  divider();
+
+  boldOn(); doubleHOn();
+  text(twoCol(t.totalLabel, rupiah(t.total)));
+  sizeNormal(); boldOff();
+  divider();
+
+  text(twoCol('Metode Bayar', t.metode));
+  if (t.catatan) text(`Catatan: ${t.catatan}\n`);
+  text('\n');
+
+  return new Uint8Array(out);
 }
 
 async function printViaBluetooth(t){
@@ -294,19 +363,35 @@ async function printViaBluetooth(t){
   const service = await server.getPrimaryService(SERVICE_UUID);
   const characteristic = await service.getCharacteristic(CHAR_UUID);
 
-  showStatus('Menyiapkan gambar struk...', '');
-  const bitmapObj = await captureReceiptAsMonoBitmap(PRINTER_WIDTH_DOTS);
-  const imageCmd = buildEscPosRasterCommand(bitmapObj);
-
+  showStatus('Menyiapkan struk...', '');
   const ESC = 0x1B, GS = 0x1D;
   const enc = new TextEncoder();
-  const tail = enc.encode("\n\n\n");
-  const bytes = new Uint8Array(2 + imageCmd.length + tail.length + 4);
+  const parts = [];
+
+  parts.push(new Uint8Array([ESC, 0x40])); // init printer
+
+  try {
+    const logoBitmap = await loadLogoBitmap(LOGO_WIDTH_DOTS);
+    parts.push(new Uint8Array([ESC, 0x61, 0x01])); // center
+    parts.push(buildEscPosRasterCommand(logoBitmap));
+    parts.push(enc.encode('\n'));
+  } catch (e) {
+    console.warn('Logo gagal dimuat, lanjut tanpa logo.', e);
+  }
+
+  parts.push(buildReceiptTextBytes(t));
+
+  parts.push(new Uint8Array([ESC, 0x61, 0x01])); // center
+  parts.push(buildCode128Barcode(t.trxId));
+  parts.push(enc.encode('\n'));
+
+  parts.push(enc.encode('Nota sah tanpa tanda tangan\ndan cap basah\n\n\n'));
+  parts.push(new Uint8Array([GS, 0x56, 0x42, 0x00])); // potong kertas
+
+  const total = parts.reduce((s, p) => s + p.length, 0);
+  const bytes = new Uint8Array(total);
   let off = 0;
-  bytes.set([ESC, 0x40], off); off += 2;              // init printer
-  bytes.set(imageCmd, off); off += imageCmd.length;    // gambar struk
-  bytes.set(tail, off); off += tail.length;            // feed kertas
-  bytes.set([GS, 0x56, 0x42, 0x00], off);              // potong kertas
+  for (const p of parts) { bytes.set(p, off); off += p.length; }
 
   showStatus('Mengirim struk ke printer...', '');
   const CHUNK = 180; // batas aman untuk write BLE
