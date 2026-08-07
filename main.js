@@ -338,13 +338,12 @@ function buildReceiptTextBytes(t){
 
   alignLeft();
   text(`No. Transaksi:\n`);
-  text(`${t.trxId}`);
-
+  text(`${t.trxId}\n`);
 
   alignCenter();
   boldOn();
   divider();
-  text(t.jenisLabel.toUpperCase());
+  text(t.jenisLabel.toUpperCase() + '\n');
   divider();
   boldOff();
 
@@ -360,6 +359,7 @@ function buildReceiptTextBytes(t){
   text(twoCol(t.totalLabel, rupiah(t.total)));
   boldOff();
   doubleDivider();
+  halfGap();
 
   text(twoCol('Metode Bayar', t.metode));
   if (t.catatan) text(`Catatan: ${t.catatan}\n`);
