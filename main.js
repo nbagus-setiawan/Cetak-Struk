@@ -328,39 +328,39 @@ function buildReceiptTextBytes(t){
   text('\n');
 
   text('TRANSAKSI BERHASIL\n');
-  text(`${t.tgl} - ${t.jam} WIB\n`);
-  text('\n');
+  text(`${t.tgl} - ${t.jam} WIB`);
+  text('');
 
   alignLeft();
   text(`No. Transaksi:\n`);
-  text(`${t.trxId}\n`);
-  text('\n');
+  text(`${t.trxId}`);
+  text('');
 
   alignCenter();
   divider();
-  text(t.jenisLabel.toUpperCase() + '\n');
+  text(t.jenisLabel.toUpperCase());
   divider();
   alignLeft();
-  text('\n');
+  text('');
 
   t.detailFields.filter(f => f.value).forEach(f => text(twoCol(f.label, f.value)));
   if (t.namaPelanggan) text(twoCol('Pelanggan', t.namaPelanggan));
-  text('\n');
+  text('');
 
   text(twoCol('Nominal', rupiah(t.nominal)));
   text(twoCol('Biaya Admin', rupiah(t.admin)));
-  text('\n');
+  text('');
 
   divider();
   boldOn();
   text(twoCol(t.totalLabel, rupiah(t.total)));
   boldOff();
   divider();
-  text('\n');
+  text('');
 
   text(twoCol('Metode Bayar', t.metode));
   if (t.catatan) text(`Catatan: ${t.catatan}\n`);
-  text('\n');
+  text('');
 
   return new Uint8Array(out);
 }
