@@ -204,48 +204,80 @@ function showStatus(msg, type){
 }
 function hideStatus(){ statusBox.className = 'status-box'; }
 
-/* ======================= CETAK VIA BLUETOOTH (ESC/POS) ======================= */
+/* ======================= CETAK VIA BLUETOOTH (ESC/POS - RASTER GAMBAR) ======================= */
 const SERVICE_UUID = '000018f0-0000-1000-8000-00805f9b34fb';
 const CHAR_UUID    = '00002af1-0000-1000-8000-00805f9b34fb';
 
-function buildEscPosBytes(t){
-  const enc = new TextEncoder();
-  const ESC = 0x1B, GS = 0x1D;
-  let out = [];
-  const push = (...b)=> out.push(...b);
-  const text = (s)=> push(...enc.encode(s));
-  const line = ()=> text("--------------------------------\n");
+// Lebar kertas printer dalam dot. Standar 58mm ≈ 384 dot, 80mm ≈ 576 dot.
+// Ganti ke 576 kalau printer kamu kertas 80mm.
+const PRINTER_WIDTH_DOTS = 384;
 
-  push(ESC,0x40);
-  push(ESC,0x61,0x01);
-  push(ESC,0x21,0x30); text(STORE.name+"\n");
-  push(ESC,0x21,0x00);
-  text(STORE.addr1+"\n");
-  text(STORE.addr2+"\n");
-  text("WhatsApp: "+formatPhone(STORE.phone)+"\n");
-  line();
-  push(ESC,0x61,0x00);
-  text(`No: ${t.trxId}\n`);
-  text(`Tgl: ${t.tgl}  Jam: ${t.jam}\n`);
-  push(ESC,0x61,0x01);
-  push(ESC,0x21,0x08); text(t.jenisLabel.toUpperCase()+"\n"); push(ESC,0x21,0x00);
-  push(ESC,0x61,0x00);
-  t.detailFields.filter(f=>f.value).forEach(f=> text(`${f.label}: ${f.value}\n`));
-  if(t.namaPelanggan) text(`Pelanggan: ${t.namaPelanggan}\n`);
-  line();
-  text(`Nominal   : ${rupiah(t.nominal)}\n`);
-  text(`Adm       : ${rupiah(t.admin)}\n`);
-  line();
-  push(ESC,0x21,0x08);
-  text(`${t.totalLabel}: ${rupiah(t.total)}\n`);
-  push(ESC,0x21,0x00);
-  text(`Metode: ${t.metode}\n`);
-  if(t.catatan) text(`Catatan: ${t.catatan}\n`);
-  push(ESC,0x61,0x01);
-  text("\nTerima kasih\n");
-  text("Nota sah tanpa tanda tangan\n\n\n");
-  push(GS,0x56,0x42,0x00);
-  return new Uint8Array(out);
+/**
+ * Ambil screenshot elemen struk (persis tampilan di preview, termasuk logo,
+ * warna status, kotak referensi, barcode) lalu ubah jadi bitmap hitam-putih
+ * (dithering sederhana) supaya bisa dicetak sebagai gambar via ESC/POS.
+ */
+async function captureReceiptAsMonoBitmap(targetWidthDots){
+  const receiptOuter = document.querySelector('.receipt-outer');
+  const canvas = await html2canvas(receiptOuter, { backgroundColor: '#ffffff', scale: 2 });
+
+  const scale = targetWidthDots / canvas.width;
+  const targetHeight = Math.max(1, Math.round(canvas.height * scale));
+
+  const off = document.createElement('canvas');
+  off.width = targetWidthDots;
+  off.height = targetHeight;
+  const ctx = off.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, targetWidthDots, targetHeight);
+  ctx.drawImage(canvas, 0, 0, targetWidthDots, targetHeight);
+
+  const imgData = ctx.getImageData(0, 0, targetWidthDots, targetHeight);
+  const px = imgData.data;
+
+  // Floyd–Steinberg dithering supaya hasil cetak foto/gradasi tetap enak dilihat
+  const gray = new Float32Array(targetWidthDots * targetHeight);
+  for (let i = 0, p = 0; i < px.length; i += 4, p++) {
+    const r = px[i], g = px[i+1], b = px[i+2], a = px[i+3];
+    const lum = a === 0 ? 255 : (0.299*r + 0.587*g + 0.114*b);
+    gray[p] = lum;
+  }
+
+  const bytesPerRow = Math.ceil(targetWidthDots / 8);
+  const bitmap = new Uint8Array(bytesPerRow * targetHeight);
+
+  for (let y = 0; y < targetHeight; y++) {
+    for (let x = 0; x < targetWidthDots; x++) {
+      const idx = y * targetWidthDots + x;
+      const oldVal = gray[idx];
+      const black = oldVal < 128;
+      if (black) {
+        const byteIndex = y * bytesPerRow + (x >> 3);
+        bitmap[byteIndex] |= (0x80 >> (x & 7));
+      }
+      const err = oldVal - (black ? 0 : 255);
+      if (x + 1 < targetWidthDots) gray[idx + 1] += err * 7/16;
+      if (y + 1 < targetHeight) {
+        if (x > 0) gray[idx - 1 + targetWidthDots] += err * 3/16;
+        gray[idx + targetWidthDots] += err * 5/16;
+        if (x + 1 < targetWidthDots) gray[idx + 1 + targetWidthDots] += err * 1/16;
+      }
+    }
+  }
+
+  return { bitmap, width: targetWidthDots, height: targetHeight, bytesPerRow };
+}
+
+// Bungkus bitmap jadi perintah ESC/POS GS v 0 (print raster bit image)
+function buildEscPosRasterCommand({ bitmap, width, height, bytesPerRow }){
+  const GS = 0x1D;
+  const xL = bytesPerRow & 0xFF, xH = (bytesPerRow >> 8) & 0xFF;
+  const yL = height & 0xFF,     yH = (height >> 8) & 0xFF;
+  const header = new Uint8Array([GS, 0x76, 0x30, 0x00, xL, xH, yL, yH]);
+  const out = new Uint8Array(header.length + bitmap.length);
+  out.set(header, 0);
+  out.set(bitmap, header.length);
+  return out;
 }
 
 async function printViaBluetooth(t){
@@ -262,8 +294,22 @@ async function printViaBluetooth(t){
   const service = await server.getPrimaryService(SERVICE_UUID);
   const characteristic = await service.getCharacteristic(CHAR_UUID);
 
-  const bytes = buildEscPosBytes(t);
-  const CHUNK = 180;
+  showStatus('Menyiapkan gambar struk...', '');
+  const bitmapObj = await captureReceiptAsMonoBitmap(PRINTER_WIDTH_DOTS);
+  const imageCmd = buildEscPosRasterCommand(bitmapObj);
+
+  const ESC = 0x1B, GS = 0x1D;
+  const enc = new TextEncoder();
+  const tail = enc.encode("\n\n\n");
+  const bytes = new Uint8Array(2 + imageCmd.length + tail.length + 4);
+  let off = 0;
+  bytes.set([ESC, 0x40], off); off += 2;              // init printer
+  bytes.set(imageCmd, off); off += imageCmd.length;    // gambar struk
+  bytes.set(tail, off); off += tail.length;            // feed kertas
+  bytes.set([GS, 0x56, 0x42, 0x00], off);              // potong kertas
+
+  showStatus('Mengirim struk ke printer...', '');
+  const CHUNK = 180; // batas aman untuk write BLE
   for(let i=0;i<bytes.length;i+=CHUNK){
     await characteristic.writeValue(bytes.slice(i,i+CHUNK));
   }
