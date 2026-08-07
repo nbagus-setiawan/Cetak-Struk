@@ -338,13 +338,13 @@ function buildReceiptTextBytes(t){
 
   alignLeft();
   text(`No. Transaksi:\n`);
-  text(`${t.trxId}\n`);
+  text(`${t.trxId}`);
   halfGap();
 
   alignCenter();
   boldOn();
   divider();
-  text(t.jenisLabel.toUpperCase() + '\n');
+  text(t.jenisLabel.toUpperCase());
   divider();
   boldOff();
   halfGap();
