@@ -116,8 +116,8 @@ document.getElementById('btnGenerate').addEventListener('click', ()=>{
   });
 
   const isTarikan = (jenis==='tarik_tunai_bank' || jenis==='tarik_tunai_ewallet');
-  
-  // PERBAIKAN: Jika penarikan tunai, total sama dengan nominal (tanpa dikurangi admin)
+
+  // Jika penarikan tunai, total sama dengan nominal (tanpa dikurangi admin)
   const total = isTarikan ? nominal : (nominal + admin);
   const totalLabel = isTarikan ? "Total Diterima" : "Total Dibayar";
 
@@ -218,16 +218,7 @@ const PAPER_WIDTH_DOTS = 384;
 // Lebar logo itu sendiri saat dicetak (harus <= PAPER_WIDTH_DOTS).
 const LOGO_WIDTH_DOTS = 260;
 
-/* ---- Utilitas gambar (khusus logo) ----
- * PENTING: banyak printer thermal murah MENGABAIKAN perintah "rata tengah"
- * untuk gambar (GS v 0) — gambar selalu dicetak mulai dari sisi kiri kertas,
- * walau perintah ESC a (align) sudah dikirim sebelumnya. Makanya logo bisa
- * kelihatan "nempel kiri" / tidak sejajar dengan teks di bawahnya yang
- * memang center beneran.
- * Solusinya: logo digambar ke kanvas SELEBAR KERTAS PENUH, dengan logo
- * sudah diposisikan center di dalam kanvas itu sejak dari sini. Jadi
- * walaupun printer selalu cetak gambar dari kiri, hasilnya tetap kelihatan
- * center karena centering-nya sudah "dibakar" ke dalam data bitmap-nya. */
+/* ---- Utilitas gambar (khusus logo) ---- */
 async function loadLogoBitmap(logoWidthDots, paperWidthDots){
   const img = new Image();
   img.src = 'logo-fastpay.png';
@@ -271,12 +262,7 @@ function buildEscPosRasterCommand({ bitmap, height, bytesPerRow }){
   return out;
 }
 
-/* ---- Barcode native (dicetak langsung oleh printer, bukan gambar) ----
- * Nomor transaksi lengkap ("INV/202608/154993") kalau dikodekan apa adanya
- * jadi terlalu LEBAR untuk kertas 58mm dan printer akan menolaknya
- * ("wide error!"). Jadi barcode hanya mengkodekan ANGKA-nya saja pakai
- * Code Set C (paling padat, 2 digit per simbol) supaya muat di kertas.
- * Teks lengkap nomor transaksi tetap dicetak manual di bawah barcode. */
+/* ---- Barcode native (dicetak langsung oleh printer, bukan gambar) ---- */
 function buildCode128Barcode(data, { height = 60, moduleWidth = 2 } = {}){
   const GS = 0x1D;
   const enc = new TextEncoder();
@@ -294,7 +280,14 @@ function buildCode128Barcode(data, { height = 60, moduleWidth = 2 } = {}){
   return new Uint8Array(out);
 }
 
-/* ---- Susun bagian teks struk (native font printer) ---- */
+/* ---- Susun bagian teks struk (native font printer) ----
+ * RAPI 58mm:
+ * - twoCol sekarang mensyaratkan minimal 2 spasi jarak antara label & nilai;
+ *   kalau nggak cukup, otomatis pindah baris & nilainya rata kanan (bukan
+ *   dipaksa nempel 1 spasi seperti sebelumnya).
+ * - Baris TOTAL dibatasi garis ganda ("=") biar beda & lebih menonjol
+ *   dibanding pembatas biasa ("-").
+ * - Spasi kosong dirapikan jadi konsisten 1 baris kosong antar bagian. */
 function buildReceiptTextBytes(t){
   const ESC = 0x1B, GS = 0x1D;
   const enc = new TextEncoder();
@@ -302,10 +295,12 @@ function buildReceiptTextBytes(t){
   const push = (...b) => out.push(...b);
   const text = (s) => push(...enc.encode(s));
   const divider = () => text('-'.repeat(PRINTER_COLS) + '\n');
+  const doubleDivider = () => text('='.repeat(PRINTER_COLS) + '\n');
 
   const twoCol = (l, r) => {
     l = String(l); r = String(r);
-    if (l.length + r.length + 1 >= PRINTER_COLS) {
+    // minimal 2 spasi jarak; kalau nggak muat, pindah baris & rata kanan
+    if (l.length + r.length + 2 > PRINTER_COLS) {
       return l + '\n' + r.padStart(PRINTER_COLS) + '\n';
     }
     return l + ' '.repeat(PRINTER_COLS - l.length - r.length) + r + '\n';
@@ -328,39 +323,39 @@ function buildReceiptTextBytes(t){
   text('\n');
 
   text('TRANSAKSI BERHASIL\n');
-  text(`${t.tgl} - ${t.jam} WIB`);
-  text('');
+  text(`${t.tgl} - ${t.jam} WIB\n`);
+  text('\n');
 
   alignLeft();
   text(`No. Transaksi:\n`);
-  text(`${t.trxId}`);
-  text('');
+  text(`${t.trxId}\n`);
+  text('\n');
 
   alignCenter();
   divider();
-  text(t.jenisLabel.toUpperCase());
+  text(t.jenisLabel.toUpperCase() + '\n');
   divider();
-  alignLeft();
-  text('');
+  text('\n');
 
+  alignLeft();
   t.detailFields.filter(f => f.value).forEach(f => text(twoCol(f.label, f.value)));
   if (t.namaPelanggan) text(twoCol('Pelanggan', t.namaPelanggan));
-  text('');
+  text('\n');
 
   text(twoCol('Nominal', rupiah(t.nominal)));
   text(twoCol('Biaya Admin', rupiah(t.admin)));
-  text('');
+  text('\n');
 
-  divider();
+  doubleDivider();
   boldOn();
   text(twoCol(t.totalLabel, rupiah(t.total)));
   boldOff();
-  divider();
-  text('');
+  doubleDivider();
+  text('\n');
 
   text(twoCol('Metode Bayar', t.metode));
   if (t.catatan) text(`Catatan: ${t.catatan}\n`);
-  text('');
+  text('\n');
 
   return new Uint8Array(out);
 }
@@ -397,9 +392,11 @@ async function printViaBluetooth(t){
 
   parts.push(buildReceiptTextBytes(t));
 
+  // Label "No. Referensi" ditambahkan di atas barcode biar jelas kegunaannya
   parts.push(new Uint8Array([ESC, 0x61, 0x01])); // center
+  parts.push(enc.encode('No. Referensi\n'));
   parts.push(buildCode128Barcode(t.trxId));
-  parts.push(enc.encode(t.trxId + '\n'));
+  parts.push(enc.encode(t.trxId + '\n\n'));
   parts.push(enc.encode('Nota sah tanpa tanda tangan\ndan cap basah\n'));
   parts.push(new Uint8Array([GS, 0x56, 0x42, 0x00])); // potong kertas, tanpa feed tambahan
 
