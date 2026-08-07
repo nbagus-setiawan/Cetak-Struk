@@ -212,29 +212,43 @@ const CHAR_UUID    = '00002af1-0000-1000-8000-00805f9b34fb';
 
 // Lebar kertas dalam kolom karakter (font normal). 58mm biasanya 32 kolom, 80mm 48 kolom.
 const PRINTER_COLS = 32;
-// Lebar logo dalam dot saat dicetak (bukan lebar kertas). 58mm ≈ 384 dot total.
+// Lebar kertas dalam dot (58mm ≈ 384 dot, cocok dengan 32 kolom teks di atas).
+// Ganti ke 576 kalau kertas printer kamu 80mm (dan PRINTER_COLS ke 48).
+const PAPER_WIDTH_DOTS = 384;
+// Lebar logo itu sendiri saat dicetak (harus <= PAPER_WIDTH_DOTS).
 const LOGO_WIDTH_DOTS = 220;
 
-/* ---- Utilitas gambar (khusus logo) ---- */
-async function loadLogoBitmap(targetWidthDots){
+/* ---- Utilitas gambar (khusus logo) ----
+ * PENTING: banyak printer thermal murah MENGABAIKAN perintah "rata tengah"
+ * untuk gambar (GS v 0) — gambar selalu dicetak mulai dari sisi kiri kertas,
+ * walau perintah ESC a (align) sudah dikirim sebelumnya. Makanya logo bisa
+ * kelihatan "nempel kiri" / tidak sejajar dengan teks di bawahnya yang
+ * memang center beneran.
+ * Solusinya: logo digambar ke kanvas SELEBAR KERTAS PENUH, dengan logo
+ * sudah diposisikan center di dalam kanvas itu sejak dari sini. Jadi
+ * walaupun printer selalu cetak gambar dari kiri, hasilnya tetap kelihatan
+ * center karena centering-nya sudah "dibakar" ke dalam data bitmap-nya. */
+async function loadLogoBitmap(logoWidthDots, paperWidthDots){
   const img = new Image();
   img.src = 'logo-fastpay.png';
   await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
 
-  const scale = targetWidthDots / img.naturalWidth;
+  const scale = logoWidthDots / img.naturalWidth;
   const h = Math.max(1, Math.round(img.naturalHeight * scale));
-  const canvas = document.createElement('canvas');
-  canvas.width = targetWidthDots; canvas.height = h;
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, targetWidthDots, h);
-  ctx.drawImage(img, 0, 0, targetWidthDots, h);
+  const offsetX = Math.max(0, Math.round((paperWidthDots - logoWidthDots) / 2));
 
-  const data = ctx.getImageData(0, 0, targetWidthDots, h).data;
-  const bytesPerRow = Math.ceil(targetWidthDots / 8);
+  const canvas = document.createElement('canvas');
+  canvas.width = paperWidthDots; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, paperWidthDots, h);
+  ctx.drawImage(img, offsetX, 0, logoWidthDots, h);
+
+  const data = ctx.getImageData(0, 0, paperWidthDots, h).data;
+  const bytesPerRow = Math.ceil(paperWidthDots / 8);
   const bitmap = new Uint8Array(bytesPerRow * h);
   for (let y = 0; y < h; y++) {
-    for (let x = 0; x < targetWidthDots; x++) {
-      const idx = (y * targetWidthDots + x) * 4;
+    for (let x = 0; x < paperWidthDots; x++) {
+      const idx = (y * paperWidthDots + x) * 4;
       const r = data[idx], g = data[idx+1], b = data[idx+2], a = data[idx+3];
       const lum = a < 10 ? 255 : (0.299*r + 0.587*g + 0.114*b);
       if (lum < 160) {
@@ -243,7 +257,7 @@ async function loadLogoBitmap(targetWidthDots){
       }
     }
   }
-  return { bitmap, width: targetWidthDots, height: h, bytesPerRow };
+  return { bitmap, width: paperWidthDots, height: h, bytesPerRow };
 }
 
 function buildEscPosRasterCommand({ bitmap, height, bytesPerRow }){
@@ -319,9 +333,7 @@ function buildReceiptTextBytes(t){
   text('WhatsApp: ' + formatPhone(STORE.phone) + '\n');
   text('\n');
 
-  boldOn();
   text(center('TRANSAKSI BERHASIL') + '\n');
-  boldOff();
   text(center(`${t.tgl} - ${t.jam} WIB`) + '\n');
   text('\n');
 
@@ -332,9 +344,7 @@ function buildReceiptTextBytes(t){
   divider();
 
   alignCenter();
-  boldOn();
   text(center(t.jenisLabel.toUpperCase()) + '\n');
-  boldOff();
   alignLeft();
   divider();
 
@@ -346,9 +356,9 @@ function buildReceiptTextBytes(t){
   text(twoCol('Biaya Admin', rupiah(t.admin)));
   divider();
 
-  boldOn(); doubleHOn();
+  boldOn();
   text(twoCol(t.totalLabel, rupiah(t.total)));
-  sizeNormal(); boldOff();
+  boldOff();
   divider();
 
   text(twoCol('Metode Bayar', t.metode));
@@ -380,7 +390,7 @@ async function printViaBluetooth(t){
   parts.push(new Uint8Array([ESC, 0x40])); // init printer
 
   try {
-    const logoBitmap = await loadLogoBitmap(LOGO_WIDTH_DOTS);
+    const logoBitmap = await loadLogoBitmap(LOGO_WIDTH_DOTS, PAPER_WIDTH_DOTS);
     parts.push(new Uint8Array([ESC, 0x61, 0x01])); // center
     parts.push(buildEscPosRasterCommand(logoBitmap));
     parts.push(enc.encode('\n'));
